@@ -1,0 +1,74 @@
+#!/bin/bash
+
+if [ -z "$1" ]
+then
+	echo "Usage: $0 <subject id> [hemi]"
+	exit
+fi
+
+SUBJID=$1
+
+if [ "$2" == "both" ]
+then
+	HEMIS="lh
+	rh"
+else
+	HEMIS=$2
+fi
+
+# check for input files
+
+#export FREESURFER_HOME=/addo/freesurfer-6.0.0-curv/
+#. $FREESURFER_HOME/SetUpFreeSurfer.sh
+CURDIR=`pwd`
+export SUBJECTS_DIR=`pwd`/freesurfer
+
+FSDIR=`pwd`/freesurfer/$SUBJID
+
+# make the brainmask
+mri_mask $FSDIR/mri/T1.mgz TissueSeg/${SUBJID}_brain_mask.nii.gz $FSDIR/mri/brainmask.mgz
+
+for CURHEMI in $HEMIS
+do
+	cd $FSDIR/surf
+
+	mkdir -p ../stats
+	#cp ${CURHEMI}.white ${CURHEMI}.smoothwm
+	cp ${CURHEMI}.white ${CURHEMI}.orig
+	mris_smooth -n 3 -nw -seed 1234 ../surf/$CURHEMI.white ../surf/$CURHEMI.smoothwm
+	DOINFLATE=YES
+
+	if [ "$DOINFLATE" == "YES" ]
+	then
+		mris_inflate_cuda ${CURHEMI}.smoothwm ${CURHEMI}.inflated
+		if [ "$?" != "0" ]
+		then
+			mris_inflate ${CURHEMI}.smoothwm ${CURHEMI}.inflated
+		fi
+
+		mris_sphere_cuda -remove_negative 1 -seed 1234 ${CURHEMI}.inflated ${CURHEMI}.sphere
+		if [ "$?" != "0" ]
+		then
+			mris_sphere -remove_negative 1 -seed 1234 ${CURHEMI}.inflated ${CURHEMI}.sphere
+		fi
+	fi
+
+#mris_write_curvature ${CURHEMI}.smoothwm ${CURHEMI}.curv ${CURHEMI}.area
+# computes the smoothwm curvature, here
+	mris_curvature -w -a 10 ${CURHEMI}.smoothwm
+	cp ${CURHEMI}.smoothwm.H ${CURHEMI}.curv
+
+# computes the inflated surface curvature
+	mris_curvature -thresh .999 -n -a 5 -w -distances 10 10 $CURHEMI.inflated
+# computes the curvature stats as per recon-all
+	mris_curvature_stats -m --writeCurvatureFiles -G -o ../stats/$CURHEMI.curv.stats -F smoothwm $SUBJID $CURHEMI curv sulc
+# writes out the vertex "area" file
+	FreesurferVertexArea $CURHEMI.white $CURHEMI.area
+	FreesurferVertexArea $CURHEMI.pial $CURHEMI.area.pial
+#echo "Thickness"
+
+#mris_register -curv $CURHEMI.sphere /home/addo/neonatal/bonnie_mirtk/freesurfer_bonnie_seg/sphere_template/$CURHEMI.template2.tif $CURHEMI.sphere.reg
+#mrisp_paint -a 2 /home/addo/neonatal/bonnie_mirtk/freesurfer_bonnie_seg/sphere_template/lh.template2.tif $CURHEMI.sphere.reg $CURHEMI.avg_curv
+#mris_ca_label -t $FREESURFER_HOME/FreeSurferColorLUT.txt -aseg ../mri/aseg.presurf.medial.mgz $SUBJID $CURHEMI sphere.reg /home/addo/neonatal/bonnie_mirtk/freesurfer_bonnie_seg/sphere_template/${CURHEMI}.aparc.gcs ../label/${CURHEMI}.aparc.annot
+	cd $CURDIR
+done

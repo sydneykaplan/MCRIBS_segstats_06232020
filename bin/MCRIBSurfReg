@@ -1,0 +1,22 @@
+#!/bin/bash
+
+SUBJID=$1
+HEMIS=$2
+
+if [ "$HEMIS" == "both" ]
+then
+	HEMIS="lh
+	rh"
+fi
+
+export SUBJECTS_DIR=`pwd`/freesurfer
+cd $SUBJECTS_DIR/$SUBJID/surf
+
+LEVEL=2
+
+cd $SUBJECTS_DIR/$SUBJID/surf
+
+for HEMI in $HEMIS
+do
+	mris_register -curv ../surf/${HEMI}.sphere `dirname $0`/../lib/sphere_templates/${HEMI}.template${LEVEL}.tif ../surf/${HEMI}.sphere.reg$LEVEL
+done
